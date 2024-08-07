@@ -1,0 +1,224 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: "${APP_NAME}-template"
+parameters:
+  - name: REPOIMAGE
+    value: "jyour-repo-image"
+    description: "Container repository image"
+    required: true
+  - name: VERSION
+    value: "1.0"
+    description: "Application version"
+    required: true
+  # - name: CR
+  #   value: "dev"
+  #   description: "Container registry"
+  #   required: true
+  - name: NAME_SPACE
+    value: "devel-delsian-dev"
+    description: "OpenShift namespace"
+    required: true
+  - name: APP_NAME
+    value: "devel-delsians-jwt"
+    description: "Application name"
+    required: true
+  - name: HOSTNAME
+    value: "your-hostname"
+    description: "Application hostname"
+    required: true
+  - name: GROUP_NAME
+    value: "devel-delsians-jwt"
+    description: "Group name"
+    required: true
+objects:
+  # configmaps
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: "${APP_NAME}-config"
+      namespace: ${NAME_SPACE}
+    data:
+      APP_PORT: "8080"
+      PARAM_TOKEN_EXPIRED: "3600"
+      PARAM_TOKEN_DELIMETER: "develdelsians"
+      DB_MIN_POOL: "20"
+      DB_MAX_POOL: "30"
+      DB_TIMEOUT_POOL: "30000"
+      JAVA_OPTS_APPEND: "-Xms1g -Xmx1g -XX:+UseG1GC -XX:ParallelGCThreads=4 -XX:ConcGCThreads=1 -XX:+UseStringDeduplication -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/dumps/oom_devel-delsians-jwt.bin -Xlog:gc*:file=/dumps/gc_devel-delsians-jwt.log:time,level,tags:filecount=5,filesize=100m"
+  # secret
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: "${APP_NAME}-secret"
+      namespace: ${NAME_SPACE}
+    type: Opaque
+    data:
+      PARAM_JKEY: "Li9rZXlzL215a2V5c3RvcmUuamtz"
+      PARAM_KEY_PASSWORD: "Ym5pMTIzNC8="
+      PARAM_KEY_ALIAS: "MQ=="
+      PARAM_JKEY_PRIVATE_SERVER: "Li9rZXlzL3ByaXZhdGVfa2V5X3NlcnZlci5kZXI="
+      PARAM_JKEY_PUBLIC_SERVER: "Li9rZXlzL3B1YmxpY19rZXlfc2VydmVyLmRlcg=="
+      PARAM_JKEY_PRIVATE_CLIENT: "Li9rZXlzL3ByaXZhdGVfa2V5X2NsaWVudC5kZXI="
+      PARAM_JKEY_PUBLIC_CLIENT: "Li9rZXlzL3B1YmxpY19rZXlfY2xpZW50LmRlcg=="
+      DB_HOST: "MTkyLjE2OC4xNDIuNDI="
+      DB_PORT: "MTUzMA=="
+      DB_SID: "cXJkYmRldg=="
+      DB_USER: "UVJEQkRFVk1FUkNIQU5UQVBJ"
+      DB_PASS: "cXJkYmRldmFwaTQ1Ng=="
+  # deployment
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: "${APP_NAME}"
+      namespace: ${NAME_SPACE}
+      labels:
+        app: "${APP_NAME}"
+        app.kubernetes.io/part-of: "${GROUP_NAME}"
+    spec:
+      progressDeadlineSeconds: 600
+      replicas: 1
+      revisionHistoryLimit: 10
+      strategy:
+        rollingUpdate:
+          maxSurge: 25%
+          maxUnavailable: 25%
+        type: RollingUpdate
+      selector:
+        matchLabels:
+          app: "${APP_NAME}"
+          version: v1
+      template:
+        metadata:
+          annotations:
+            sidecar.istio.io/inject: "true"
+          labels:
+            app: "${APP_NAME}"
+            version: v1
+        spec:
+          volumes:
+            - name: heap-dumps
+              emptyDir: {}
+          containers:
+            - envFrom:
+                - configMapRef:
+                    name: "${APP_NAME}-config"
+                - secretRef:
+                    name: "${APP_NAME}-secret"
+              terminationMessagePath: /dev/termination-log
+              name: "${APP_NAME}"
+              volumeMounts:
+                - name: heap-dumps
+                  mountPath: /dumps
+              env:
+                - name: TZ
+                  value: Asia/Jakarta
+                - name: JAVA_OPTS_APPEND
+                  valueFrom:
+                    configMapKeyRef:
+                      name: "${APP_NAME}-config"
+                      key: JAVA_OPTS_APPEND
+              ports:
+                - containerPort: 8080
+                  name: http
+                  protocol: TCP
+              imagePullPolicy: Always
+              # readinessProbe:
+              #   httpGet:
+              #     path: /readiness
+              #     port: 8080
+              #   initialDelaySeconds: 15
+              #   periodSeconds: 60
+              #   successThreshold: 1
+              #   failureThreshold: 10
+              livenessProbe:
+                httpGet:
+                  path: /_/healthCheck
+                  port: 8080
+                initialDelaySeconds: 15
+                periodSeconds: 60
+                successThreshold: 1
+                failureThreshold: 10
+              terminationMessagePolicy: File
+              image: ${REPOIMAGE}${APP_NAME}:${VERSION}
+#              resources:
+#                limits:
+#                  cpu: 500m
+#                  memory: 512Mi
+#                requests:
+#                  cpu: 50m
+#                  memory: 50Mi
+          restartPolicy: Always
+          terminationGracePeriodSeconds: 30
+          dnsPolicy: ClusterFirst
+          schedulerName: default-scheduler
+  # service
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: "${APP_NAME}"
+      namespace: ${NAME_SPACE}
+      labels:
+        app: "${APP_NAME}"
+        app.kubernetes.io/part-of: "${GROUP_NAME}"
+    spec:
+      ports:
+        - name: http
+          protocol: TCP
+          port: 80
+          targetPort: http
+      internalTrafficPolicy: Cluster
+      sessionAffinity: None
+      selector:
+        app: "${APP_NAME}"
+  # route
+  - apiVersion: route.openshift.io/v1
+    kind: Route
+    metadata:
+      name: "${APP_NAME}"
+      namespace: ${NAME_SPACE}
+      labels:
+        app: "${APP_NAME}"
+        app.kubernetes.io/part-of: "${GROUP_NAME}"
+      annotations:
+        haproxy.router.openshift.io/timeout: 30s
+    spec:
+      host: "${APP_NAME}-${NAME_SPACE}.${HOSTNAME}"
+      to:
+        kind: Service
+        name: "${APP_NAME}"
+        weight: 100
+      port:
+        targetPort: http
+      wildcardPolicy: None
+  # HPA
+  - apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    metadata:
+      name: "${APP_NAME}"
+      namespace: ${NAME_SPACE}
+      labels:
+        app: "${APP_NAME}"
+        app.kubernetes.io/part-of: "${GROUP_NAME}"
+        release: stable
+        tier: backend
+    spec:
+      scaleTargetRef:
+        kind: Deployment
+        name: "${APP_NAME}"
+        apiVersion: apps/v1
+      minReplicas: 1
+      maxReplicas: 2
+      metrics:
+        - type: Resource
+          resource:
+            name: memory
+            target:
+              type: Utilization
+              averageUtilization: 65
+        - type: Resource
+          resource:
+            name: cpu
+            target:
+              type: Utilization
+              averageUtilization: 65
