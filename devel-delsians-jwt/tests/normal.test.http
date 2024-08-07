@@ -1,0 +1,111 @@
+@host=http://localhost:8080
+
+GET {{host}}/_/healthCheck
+
+###
+# @name CreateToken
+POST {{host}}/jwt/create/token
+Content-Type: application/json
+
+{
+    "refnum": "202407231454010001",
+    "uuid": "test123",
+    "email": "merchantkoko1@gmail.com",
+    "username": "merchantkoko1@gmail.com",
+    "channel": "PORTAL",
+    "role": "Owner",
+    "authorities": [
+        "Dashboard",
+        "Notification List",
+        "Profile",
+        "Settlement",
+        "Transaction Report",
+        "Update Notification"
+    ]
+}
+###
+@token={{CreateToken.response.body.token}}
+
+###
+POST {{host}}/jwt/validate/token
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "refnum": "202407231454010001",
+    "email": "merchantkoko1@gmail.com"
+}
+
+
+###
+# @name RefreshedToken
+POST {{host}}/jwt/refresh/token
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+    "refnum": "202407231454010001",
+    "email": "merchantkoko1@gmail.com",
+    "channel": "PORTAL",
+    "expired": "3600",
+    "uuid": "test123"
+}
+
+###
+@refreshedToken={{RefreshedToken.response.body.token}}
+
+###
+POST {{host}}/jwt/validate/token
+Content-Type: application/json
+Authorization: Bearer {{refreshedToken}}
+
+{
+    "refnum": "202407231454010001",
+    "email": "merchantkoko1@gmail.com"
+}
+
+###
+POST {{host}}/jwt/clear/token
+Content-Type: application/json
+Authorization: Bearer {{refreshedToken}}
+
+{
+    "refnum": "202407231454010001",
+    "email": "merchantkoko1@gmail.com"
+}
+
+###
+# @name CreateSignature
+POST {{host}}/jwt/signature
+Content-Type: application/json
+
+{
+    "email": "wildananugrah@gmail.com",
+    "password": "p@ssw0rd",
+    "username": "windananugrah"
+}
+###
+@signature={{CreateSignature.response.body.token}}
+###
+
+GET {{host}}/jwt/signature
+Content-Type: application/json
+Signature: {{signature}}
+
+###
+# @name CreateClientSignature
+POST {{host}}/jwt/client/signature
+Content-Type: application/json
+
+{
+    "email": "wildananugrah@gmail.com",
+    "password": "p@ssw0rd",
+    "username": "windananugrah"
+}
+###
+@clientSignature={{CreateClientSignature.response.body.token}}
+###
+
+GET {{host}}/jwt/client/signature
+Content-Type: application/json
+Signature: {{clientSignature}}
